@@ -40,8 +40,8 @@ func TestGetAllRecords(t *testing.T) {
 		return
 	}
 
-	//log the type of the response:
-	t.Logf("type: %T", records)
+	t.Logf("Type: %T", records)
+
 	log.Println("Records fetched:")
 	for _, record := range records {
 		rr := record.RR()
@@ -84,7 +84,8 @@ func TestAppendRecord(t *testing.T) {
 		// }
 		return
 	}
-	_ = newRecord
+
+	t.Logf("Type: %T", newRecord)
 
 	records, err := p.GetAllRecords(ctx, zone)
 
@@ -129,7 +130,7 @@ func TestSetRecord(t *testing.T) {
 		TTL:  3600, // 1 hour
 	}
 	// Call the SetRecords method
-	_, err := p.SetRecord(ctx, zone, record)
+	setRecord, err := p.SetRecord(ctx, zone, record)
 	if err != nil {
 		t.Logf("SetRecords returned error (expected for now): %v", err)
 		// Since the method is not fully implemented, we expect an error
@@ -138,6 +139,8 @@ func TestSetRecord(t *testing.T) {
 		// }
 		return
 	}
+
+	t.Logf("Type: %T", setRecord)
 
 	records, err := p.GetAllRecords(ctx, zone)
 
@@ -184,7 +187,7 @@ func TestDeleteRecord(t *testing.T) {
 	}
 
 	// Call the AppendRecords method
-	_, err := p.DeleteRecord(ctx, zone, record)
+	deletedRecord, err := p.DeleteRecord(ctx, zone, record)
 
 	if err != nil {
 		t.Logf("AppendRecords returned error (expected for now): %v", err)
@@ -194,6 +197,8 @@ func TestDeleteRecord(t *testing.T) {
 		// }
 		return
 	}
+
+	t.Logf("Type: %T", deletedRecord)
 
 	records, err := p.GetAllRecords(ctx, zone)
 
