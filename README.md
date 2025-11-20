@@ -16,13 +16,13 @@ import (
 	"context"
 	"fmt"
 
-	allinkl "github.com/ljelschen/libdns-all-inkl"
+	allinkl "github.com/libdns/all-inkl"
 )
 
 func main() {
 	provider := allinkl.Provider{
-		KasLogin:        "<your-login>",
-		KasAuthPassword: "<your-password>",
+		KasUsername:    "<your-login>",
+		KasPassword:    "<your-password>",
 	}
 
 	records, err := provider.GetRecords(context.TODO(), "example.de.")
