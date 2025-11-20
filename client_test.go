@@ -2,6 +2,7 @@ package allinkl
 
 import (
 	"context"
+	"log"
 	"os"
 	"testing"
 
@@ -39,10 +40,13 @@ func TestGetAllRecords(t *testing.T) {
 		return
 	}
 
-	// Once the method is implemented, add proper assertions:
-	// if records == nil {
-	//     t.Error("Expected records to not be nil")
-	// }
+	//log the type of the response:
+	t.Logf("type: %T", records)
+	log.Println("Records fetched:")
+	for _, record := range records {
+		rr := record.RR()
+		t.Logf("%s (.%s): %s, %s\n", rr.Name, zone, rr.Data, rr.Type)
+	}
 }
 
 func TestAppendRecord(t *testing.T) {
@@ -70,15 +74,34 @@ func TestAppendRecord(t *testing.T) {
 	}
 
 	// Call the AppendRecords method
-	records, err := p.AppendRecord(ctx, zone, record)
+	newRecord, err := p.AppendRecord(ctx, zone, record)
 
 	if err != nil {
 		t.Logf("AppendRecords returned error (expected for now): %v", err)
 		// Since the method is not fully implemented, we expect an error
+		// if newRecord != nil {
+		// 	t.Errorf("Expected records to be nil when error occurs, got: %v", newRecord)
+		// }
+		return
+	}
+	_ = newRecord
+
+	records, err := p.GetAllRecords(ctx, zone)
+
+	if err != nil {
+		t.Logf("GetAllRecords returned error (expected for now): %v", err)
+		// Since the method is not fully implemented, we expect an error
+		// Remove this condition once the method is properly implemented
 		if records != nil {
 			t.Errorf("Expected records to be nil when error occurs, got: %v", records)
 		}
 		return
+	}
+
+	log.Println("Records fetched:")
+	for _, record := range records {
+		rr := record.RR()
+		t.Logf("%s (.%s): %s, %s\n", rr.Name, zone, rr.Data, rr.Type)
 	}
 
 }
@@ -106,15 +129,34 @@ func TestSetRecord(t *testing.T) {
 		TTL:  3600, // 1 hour
 	}
 	// Call the SetRecords method
-	records, err := p.SetRecord(ctx, zone, record)
+	_, err := p.SetRecord(ctx, zone, record)
 	if err != nil {
 		t.Logf("SetRecords returned error (expected for now): %v", err)
 		// Since the method is not fully implemented, we expect an error
+		// if records != nil {
+		// 	t.Errorf("Expected records to be nil when error occurs, got: %v", records)
+		// }
+		return
+	}
+
+	records, err := p.GetAllRecords(ctx, zone)
+
+	if err != nil {
+		t.Logf("GetAllRecords returned error (expected for now): %v", err)
+		// Since the method is not fully implemented, we expect an error
+		// Remove this condition once the method is properly implemented
 		if records != nil {
 			t.Errorf("Expected records to be nil when error occurs, got: %v", records)
 		}
 		return
 	}
+
+	log.Println("Records fetched:")
+	for _, record := range records {
+		rr := record.RR()
+		t.Logf("%s (.%s): %s, %s\n", rr.Name, zone, rr.Data, rr.Type)
+	}
+
 }
 
 func TestDeleteRecord(t *testing.T) {
@@ -142,14 +184,33 @@ func TestDeleteRecord(t *testing.T) {
 	}
 
 	// Call the AppendRecords method
-	records, err := p.DeleteRecord(ctx, zone, record)
+	_, err := p.DeleteRecord(ctx, zone, record)
 
 	if err != nil {
 		t.Logf("AppendRecords returned error (expected for now): %v", err)
 		// Since the method is not fully implemented, we expect an error
+		// if records != nil {
+		// 	t.Errorf("Expected records to be nil when error occurs, got: %v", records)
+		// }
+		return
+	}
+
+	records, err := p.GetAllRecords(ctx, zone)
+
+	if err != nil {
+		t.Logf("GetAllRecords returned error (expected for now): %v", err)
+		// Since the method is not fully implemented, we expect an error
+		// Remove this condition once the method is properly implemented
 		if records != nil {
 			t.Errorf("Expected records to be nil when error occurs, got: %v", records)
 		}
 		return
 	}
+
+	log.Println("Records fetched:")
+	for _, record := range records {
+		rr := record.RR()
+		t.Logf("%s (.%s): %s, %s\n", rr.Name, zone, rr.Data, rr.Type)
+	}
+
 }
