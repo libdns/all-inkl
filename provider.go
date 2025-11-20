@@ -9,15 +9,8 @@ import (
 	"github.com/libdns/libdns"
 )
 
-// TODO: Providers must not require additional provisioning steps by the callers; it
-// should work simply by populating a struct and calling methods on it. If your DNS
-// service requires long-lived state or some extra provisioning step, do it implicitly
-// when methods are called; sync.Once can help with this, and/or you can use a
-// sync.(RW)Mutex in your Provider struct to synchronize implicit provisioning.
-
-// Provider facilitates DNS record manipulation with <TODO: PROVIDER NAME>.
+// Provider facilitates DNS record manipulation with all-ink.com.
 type Provider struct {
-	// TODO: Put config fields here (with snake_case json struct tags on exported fields), for example:
 	KasUsername string `json:"kas_username,omitempty"`
 	KasPassword string `json:"kas_password,omitempty"`
 }
