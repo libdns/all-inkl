@@ -192,14 +192,14 @@ func (p *Provider) GetAllRecords(ctx context.Context, zone string) ([]libdns.Rec
 	return recordsList, nil
 }
 
-func (p *Provider) AppendRecord(ctx context.Context, zone string, record libdns.Record) (libdns.Record, error) {
+func (p *Provider) AppendRecord(ctx context.Context, zone string, record libdns.Record) ([]libdns.Record, error) {
 
 	httpClient := &http.Client{
 		Timeout: TimeoutTime,
 	}
 	soap, err := gosoap.SoapClient(ApiBase, httpClient)
 	if err != nil {
-		return libdns.RR{}, fmt.Errorf("error creating SOAP client: %w", err)
+		return nil, fmt.Errorf("error creating SOAP client: %w", err)
 	}
 
 	// Convert the record to RR to access its fields
@@ -234,7 +234,7 @@ func (p *Provider) AppendRecord(ctx context.Context, zone string, record libdns.
 	// JSON encode the entire request like PHP
 	jsonData, err := json.Marshal(requestData)
 	if err != nil {
-		return libdns.RR{}, fmt.Errorf("error encoding JSON: %w", err)
+		return nil, fmt.Errorf("error encoding JSON: %w", err)
 	}
 
 	// Call the SOAP method with JSON-encoded params
@@ -242,26 +242,26 @@ func (p *Provider) AppendRecord(ctx context.Context, zone string, record libdns.
 		"Params": string(jsonData),
 	})
 	if err != nil {
-		return libdns.RR{}, fmt.Errorf("error calling SOAP method: %w", err)
+		return nil, fmt.Errorf("error calling SOAP method: %w", err)
 	}
 	if res == nil {
-		return libdns.RR{}, fmt.Errorf("response is nil")
+		return nil, fmt.Errorf("response is nil")
 	}
 
 	mv, err := mxj.NewMapXml([]byte(res.Body))
 	if err != nil {
-		return libdns.RR{}, fmt.Errorf("error converting XML to map: %w", err)
+		return nil, fmt.Errorf("error converting XML to map: %w", err)
 	}
 
 	// Parse response to check for success and get record ID
 	root, ok := mv["KasApiResponse"].(map[string]interface{})
 	if !ok {
-		return libdns.RR{}, fmt.Errorf("invalid response format")
+		return nil, fmt.Errorf("invalid response format")
 	}
 
 	ret, ok := root["return"].(map[string]interface{})
 	if !ok {
-		return libdns.RR{}, fmt.Errorf("invalid response format: missing return")
+		return nil, fmt.Errorf("invalid response format: missing return")
 	}
 
 	// Check for errors in response
@@ -281,14 +281,14 @@ func (p *Provider) AppendRecord(ctx context.Context, zone string, record libdns.
 		if key == "Response" {
 			val, _ := mitem["value"].(map[string]interface{})
 			if errorMsg, exists := val["KasFloodDelay"]; exists {
-				return libdns.RR{}, fmt.Errorf("API flood delay: %v", errorMsg)
+				return nil, fmt.Errorf("API flood delay: %v", errorMsg)
 			}
 		}
 	}
 
 	// Return the record with any updates from the server
 	// Since the API doesn't return the new record details, we return the original
-	return record, nil
+	return []libdns.Record{record}, nil
 }
 
 func (p *Provider) getRecordByName(ctx context.Context, zone string, record libdns.Record, recursive bool) (allinklRecord, error) {
@@ -307,10 +307,10 @@ func (p *Provider) getRecordByName(ctx context.Context, zone string, record libd
 	return allinklRecord{}, fmt.Errorf("record not found: %s", record.RR().Name)
 }
 
-func (p *Provider) SetRecord(ctx context.Context, zone string, record libdns.Record) (libdns.Record, error) {
+func (p *Provider) SetRecord(ctx context.Context, zone string, record libdns.Record) ([]libdns.Record, error) {
 	searchedRecord, err := p.getRecordByName(ctx, zone, record, false)
 	if err != nil {
-		return libdns.RR{}, fmt.Errorf("record not found: %s", record.RR().Name)
+		return nil, fmt.Errorf("record not found: %s", record.RR().Name)
 	}
 
 	httpClient := &http.Client{
@@ -319,7 +319,7 @@ func (p *Provider) SetRecord(ctx context.Context, zone string, record libdns.Rec
 
 	soap, err := gosoap.SoapClient(ApiBase, httpClient)
 	if err != nil {
-		return libdns.RR{}, fmt.Errorf("error creating SOAP client: %w", err)
+		return nil, fmt.Errorf("error creating SOAP client: %w", err)
 	}
 
 	rr := record.RR()
@@ -347,7 +347,7 @@ func (p *Provider) SetRecord(ctx context.Context, zone string, record libdns.Rec
 	// JSON encode the entire request like PHP
 	jsonData, err := json.Marshal(requestData)
 	if err != nil {
-		return libdns.RR{}, fmt.Errorf("error encoding JSON: %w", err)
+		return nil, fmt.Errorf("error encoding JSON: %w", err)
 	}
 
 	// Call the SOAP method with JSON-encoded params
@@ -356,23 +356,23 @@ func (p *Provider) SetRecord(ctx context.Context, zone string, record libdns.Rec
 	})
 
 	if err != nil {
-		return libdns.RR{}, fmt.Errorf("error calling SOAP method: %w", err)
+		return nil, fmt.Errorf("error calling SOAP method: %w", err)
 	}
 	if res == nil {
-		return libdns.RR{}, fmt.Errorf("response is nil")
+		return nil, fmt.Errorf("response is nil")
 	}
 	mv, err := mxj.NewMapXml([]byte(res.Body))
 	if err != nil {
-		return libdns.RR{}, fmt.Errorf("error converting XML to map: %w", err)
+		return nil, fmt.Errorf("error converting XML to map: %w", err)
 	}
 	// Parse response to check for success
 	root, ok := mv["KasApiResponse"].(map[string]interface{})
 	if !ok {
-		return libdns.RR{}, fmt.Errorf("invalid response format")
+		return nil, fmt.Errorf("invalid response format")
 	}
 	ret, ok := root["return"].(map[string]interface{})
 	if !ok {
-		return libdns.RR{}, fmt.Errorf("invalid response format: missing return")
+		return nil, fmt.Errorf("invalid response format: missing return")
 	}
 
 	// Check for errors in response
@@ -392,7 +392,7 @@ func (p *Provider) SetRecord(ctx context.Context, zone string, record libdns.Rec
 		if key == "Response" {
 			val, _ := mitem["value"].(map[string]interface{})
 			if errorMsg, exists := val["KasFloodDelay"]; exists {
-				return libdns.RR{}, fmt.Errorf("API flood delay: %v", errorMsg)
+				return nil, fmt.Errorf("API flood delay: %v", errorMsg)
 			}
 		}
 	}
@@ -405,13 +405,13 @@ func (p *Provider) SetRecord(ctx context.Context, zone string, record libdns.Rec
 		TTL:  record.RR().TTL,
 	}
 
-	return updatedRecord, nil
+	return []libdns.Record{updatedRecord}, nil
 }
 
-func (p *Provider) DeleteRecord(ctx context.Context, zone string, record libdns.Record) (libdns.Record, error) {
+func (p *Provider) DeleteRecord(ctx context.Context, zone string, record libdns.Record) ([]libdns.Record, error) {
 	searchedRecord, err := p.getRecordByName(ctx, zone, record, false)
 	if err != nil {
-		return libdns.RR{}, fmt.Errorf("record not found: %s", record.RR().Name)
+		return nil, fmt.Errorf("record not found: %s", record.RR().Name)
 	}
 
 	httpClient := &http.Client{
@@ -420,7 +420,7 @@ func (p *Provider) DeleteRecord(ctx context.Context, zone string, record libdns.
 
 	soap, err := gosoap.SoapClient(ApiBase, httpClient)
 	if err != nil {
-		return libdns.RR{}, fmt.Errorf("error creating SOAP client: %w", err)
+		return nil, fmt.Errorf("error creating SOAP client: %w", err)
 	}
 	params := map[string]interface{}{
 		"record_id": searchedRecord.ID,
@@ -436,7 +436,7 @@ func (p *Provider) DeleteRecord(ctx context.Context, zone string, record libdns.
 	// JSON encode the entire request like PHP
 	jsonData, err := json.Marshal(requestData)
 	if err != nil {
-		return libdns.RR{}, fmt.Errorf("error encoding JSON: %w", err)
+		return nil, fmt.Errorf("error encoding JSON: %w", err)
 	}
 
 	// Call the SOAP method with JSON-encoded params
@@ -445,23 +445,23 @@ func (p *Provider) DeleteRecord(ctx context.Context, zone string, record libdns.
 	})
 
 	if err != nil {
-		return libdns.RR{}, fmt.Errorf("error calling SOAP method: %w", err)
+		return nil, fmt.Errorf("error calling SOAP method: %w", err)
 	}
 	if res == nil {
-		return libdns.RR{}, fmt.Errorf("response is nil")
+		return nil, fmt.Errorf("response is nil")
 	}
 	mv, err := mxj.NewMapXml([]byte(res.Body))
 	if err != nil {
-		return libdns.RR{}, fmt.Errorf("error converting XML to map: %w", err)
+		return nil, fmt.Errorf("error converting XML to map: %w", err)
 	}
 	// Parse response to check for success
 	root, ok := mv["KasApiResponse"].(map[string]interface{})
 	if !ok {
-		return libdns.RR{}, fmt.Errorf("invalid response format")
+		return nil, fmt.Errorf("invalid response format")
 	}
 	ret, ok := root["return"].(map[string]interface{})
 	if !ok {
-		return libdns.RR{}, fmt.Errorf("invalid response format: missing return")
+		return nil, fmt.Errorf("invalid response format: missing return")
 	}
 	// Check for errors in response
 	items := ret["item"]
@@ -479,7 +479,7 @@ func (p *Provider) DeleteRecord(ctx context.Context, zone string, record libdns.
 		if key == "Response" {
 			val, _ := mitem["value"].(map[string]interface{})
 			if errorMsg, exists := val["KasFloodDelay"]; exists {
-				return libdns.RR{}, fmt.Errorf("API flood delay: %v", errorMsg)
+				return nil, fmt.Errorf("API flood delay: %v", errorMsg)
 			}
 		}
 	}
@@ -497,6 +497,6 @@ func (p *Provider) DeleteRecord(ctx context.Context, zone string, record libdns.
 			break
 		}
 	}
-	return deletedRecord, nil
+	return []libdns.Record{deletedRecord}, nil
 
 }

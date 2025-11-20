@@ -27,11 +27,11 @@ func (p *Provider) AppendRecords(ctx context.Context, zone string, records []lib
 
 	var createdRecords []libdns.Record
 	for _, record := range records {
-		libdnsRecord, err := p.AppendRecord(ctx, zone, record)
+		recs, err := p.AppendRecord(ctx, zone, record)
 		if err != nil {
 			return nil, fmt.Errorf("failed to append record %v: %w", record, err)
 		}
-		createdRecords = append(createdRecords, libdnsRecord.RR())
+		createdRecords = append(createdRecords, recs...)
 	}
 	return createdRecords, nil
 }
@@ -43,11 +43,11 @@ func (p *Provider) SetRecords(ctx context.Context, zone string, records []libdns
 
 	var updatedRecords []libdns.Record
 	for _, record := range records {
-		libdnsRecord, err := p.SetRecord(ctx, zone, record)
+		recs, err := p.SetRecord(ctx, zone, record)
 		if err != nil {
 			return nil, fmt.Errorf("failed to set record %v: %w", record, err)
 		}
-		updatedRecords = append(updatedRecords, libdnsRecord.RR())
+		updatedRecords = append(updatedRecords, recs...)
 	}
 	return updatedRecords, nil
 }
@@ -56,11 +56,11 @@ func (p *Provider) SetRecords(ctx context.Context, zone string, records []libdns
 func (p *Provider) DeleteRecords(ctx context.Context, zone string, records []libdns.Record) ([]libdns.Record, error) {
 	var deletedRecords []libdns.Record
 	for _, record := range records {
-		libdnsRecord, err := p.DeleteRecord(ctx, zone, record)
+		recs, err := p.DeleteRecord(ctx, zone, record)
 		if err != nil {
 			return nil, fmt.Errorf("failed to delete record %v: %w", record, err)
 		}
-		deletedRecords = append(deletedRecords, libdnsRecord.RR())
+		deletedRecords = append(deletedRecords, recs...)
 	}
 	return deletedRecords, nil
 }
