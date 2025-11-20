@@ -25,7 +25,7 @@ func main() {
 		KasPassword:    "<your-password>",
 	}
 
-	records, err := provider.GetRecords(context.TODO(), "example.de.")
+	records, err := provider.GetRecords(context.TODO(), "example.de")
 	if err != nil {
 		fmt.Println(err.Error())
 	}
