@@ -14,13 +14,14 @@ import (
 )
 
 const ApiBase = "https://kasapi.kasserver.com/soap/wsdl/KasApi.wsdl"
+const TimeoutTime = 15000 * time.Millisecond
 
 var ChachedRecords = make(map[string][]allinklRecord)
 
 func (p *Provider) GetAllRecords(ctx context.Context, zone string) ([]libdns.Record, error) {
 
 	httpClient := &http.Client{
-		Timeout: 1500 * time.Millisecond,
+		Timeout: TimeoutTime,
 	}
 	soap, err := gosoap.SoapClient(ApiBase, httpClient)
 	if err != nil {
@@ -194,7 +195,7 @@ func (p *Provider) GetAllRecords(ctx context.Context, zone string) ([]libdns.Rec
 func (p *Provider) AppendRecord(ctx context.Context, zone string, record libdns.Record) (libdns.Record, error) {
 
 	httpClient := &http.Client{
-		Timeout: 1500 * time.Millisecond,
+		Timeout: TimeoutTime,
 	}
 	soap, err := gosoap.SoapClient(ApiBase, httpClient)
 	if err != nil {
@@ -313,7 +314,7 @@ func (p *Provider) SetRecord(ctx context.Context, zone string, record libdns.Rec
 	}
 
 	httpClient := &http.Client{
-		Timeout: 1500 * time.Millisecond,
+		Timeout: TimeoutTime,
 	}
 
 	soap, err := gosoap.SoapClient(ApiBase, httpClient)
@@ -414,7 +415,7 @@ func (p *Provider) DeleteRecord(ctx context.Context, zone string, record libdns.
 	}
 
 	httpClient := &http.Client{
-		Timeout: 1500 * time.Millisecond,
+		Timeout: TimeoutTime,
 	}
 
 	soap, err := gosoap.SoapClient(ApiBase, httpClient)
