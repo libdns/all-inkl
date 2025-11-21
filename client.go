@@ -13,11 +13,16 @@ import (
 	"github.com/tiaguinho/gosoap"
 )
 
+// ApiBase is the URL for the KAS API WSDL.
 const ApiBase = "https://kasapi.kasserver.com/soap/wsdl/KasApi.wsdl"
+
+// TimeoutTime is the default timeout for API requests.
 const TimeoutTime = 15000 * time.Millisecond
 
+// ChachedRecords stores cached DNS records for zones to minimize API calls.
 var ChachedRecords = make(map[string][]allinklRecord)
 
+// GetAllRecords retrieves all DNS records for the specified zone from the KAS API.
 func (p *Provider) GetAllRecords(ctx context.Context, zone string) ([]libdns.Record, error) {
 
 	httpClient := &http.Client{
@@ -192,6 +197,7 @@ func (p *Provider) GetAllRecords(ctx context.Context, zone string) ([]libdns.Rec
 	return recordsList, nil
 }
 
+// AppendRecord adds a single DNS record to the specified zone.
 func (p *Provider) AppendRecord(ctx context.Context, zone string, record libdns.Record) ([]libdns.Record, error) {
 
 	httpClient := &http.Client{
@@ -307,6 +313,7 @@ func (p *Provider) getRecordByName(ctx context.Context, zone string, record libd
 	return allinklRecord{}, fmt.Errorf("record not found: %s", record.RR().Name)
 }
 
+// SetRecord updates a single DNS record in the specified zone.
 func (p *Provider) SetRecord(ctx context.Context, zone string, record libdns.Record) ([]libdns.Record, error) {
 	searchedRecord, err := p.getRecordByName(ctx, zone, record, false)
 	if err != nil {
@@ -408,6 +415,7 @@ func (p *Provider) SetRecord(ctx context.Context, zone string, record libdns.Rec
 	return []libdns.Record{updatedRecord}, nil
 }
 
+// DeleteRecord removes a single DNS record from the specified zone.
 func (p *Provider) DeleteRecord(ctx context.Context, zone string, record libdns.Record) ([]libdns.Record, error) {
 	searchedRecord, err := p.getRecordByName(ctx, zone, record, false)
 	if err != nil {
