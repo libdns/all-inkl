@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/clbanning/mxj"
@@ -35,7 +36,7 @@ func (p *Provider) GetAllRecords(ctx context.Context, zone string) ([]libdns.Rec
 
 	// Prepare parameters like PHP script
 	params := map[string]interface{}{
-		"zone_host": zone,
+		"zone_host": strings.TrimSuffix(zone, ".") + ".",
 	}
 
 	requestData := map[string]interface{}{
@@ -222,7 +223,7 @@ func (p *Provider) AppendRecord(ctx context.Context, zone string, record libdns.
 		"record_type": rr.Type,
 		"record_data": rr.Data,
 		"record_aux":  ttlInSeconds,
-		"zone_host":   zone + ".",
+		"zone_host":   strings.TrimSuffix(zone, ".") + ".",
 	}
 
 	// Include TTL if specified
