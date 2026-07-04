@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/clbanning/mxj"
@@ -22,6 +23,71 @@ const TimeoutTime = 15000 * time.Millisecond
 
 // ChachedRecords stores cached DNS records for zones to minimize API calls.
 var ChachedRecords = make(map[string][]allinklRecord)
+
+// kasCallMu serializes all KAS SOAP calls across goroutines.
+//
+// The KAS API enforces a minimum delay between requests ("flood
+// protection") and this package tracks that delay via
+// waitForFloodDelay/updateFloodDelay. Without a mutex, concurrent callers
+// (e.g. Caddy solving several DNS-01 challenges for a SAN certificate, or
+// two ACME issuers racing at once) can each pass the delay check at nearly
+// the same instant and then both call KAS simultaneously, tripping the
+// flood limit. KAS's rejection in that case does not always come back as a
+// plain <Fault> element (see findFaultString below), which previously
+// surfaced as an unhelpful "invalid response format" error. Holding this
+// lock around each full request/response round trip guarantees calls are
+// fully serialized and the flood delay is honored.
+var kasCallMu sync.Mutex
+
+// findFaultString searches a decoded SOAP response for a fault message,
+// regardless of XML namespace prefix.
+//
+// mxj preserves namespace prefixes as part of map keys, so a real SOAP
+// fault can come back as "Fault", "soap:Fault", "SOAP-ENV:Fault", etc.
+// The previous fault-detection only ever checked the bare "Fault" key, so
+// namespaced faults (and other unexpected shapes) were missed entirely and
+// fell through to a generic "invalid response format" error that hid the
+// actual reason (auth failure, unknown zone, rate limiting, ...). This walks
+// the whole decoded structure looking for any key containing "faultstring"
+// and returns its text.
+func findFaultString(v interface{}) (string, bool) {
+	switch t := v.(type) {
+	case map[string]interface{}:
+		for k, val := range t {
+			if strings.Contains(strings.ToLower(k), "faultstring") {
+				if s, ok := extractText(val); ok && s != "" {
+					return s, true
+				}
+			}
+		}
+		for _, val := range t {
+			if s, ok := findFaultString(val); ok {
+				return s, true
+			}
+		}
+	case []interface{}:
+		for _, item := range t {
+			if s, ok := findFaultString(item); ok {
+				return s, true
+			}
+		}
+	}
+	return "", false
+}
+
+// extractText pulls a plain string out of either a raw string value or an
+// mxj "{#text: ...}" wrapper map.
+func extractText(v interface{}) (string, bool) {
+	switch t := v.(type) {
+	case string:
+		return t, true
+	case map[string]interface{}:
+		if s, ok := t["#text"].(string); ok {
+			return s, true
+		}
+	}
+	return "", false
+}
 
 // GetAllRecords retrieves all DNS records for the specified zone from the KAS API.
 func (p *Provider) GetAllRecords(ctx context.Context, zone string) ([]libdns.Record, error) {
@@ -53,6 +119,8 @@ func (p *Provider) GetAllRecords(ctx context.Context, zone string) ([]libdns.Rec
 		log.Fatalf("Error encoding JSON: %v", err)
 	}
 
+	kasCallMu.Lock()
+	defer kasCallMu.Unlock()
 	p.waitForFloodDelay()
 
 	// Call the SOAP method with JSON-encoded params
@@ -247,7 +315,11 @@ func (p *Provider) AppendRecord(ctx context.Context, zone string, record libdns.
 		return nil, fmt.Errorf("error encoding JSON: %w", err)
 	}
 
-	// Respect KAS flood delay dynamically
+	// Respect KAS flood delay dynamically. Hold kasCallMu for the entire
+	// wait+call round trip so concurrent Append/Set/Delete/Get calls can't
+	// race past the delay check and flood the API simultaneously.
+	kasCallMu.Lock()
+	defer kasCallMu.Unlock()
 	p.waitForFloodDelay()
 
 	// Call the SOAP method with JSON-encoded params
@@ -263,24 +335,24 @@ func (p *Provider) AppendRecord(ctx context.Context, zone string, record libdns.
 
 	mv, err := mxj.NewMapXml([]byte(res.Body))
 	if err != nil {
-		return nil, fmt.Errorf("error converting XML to map: %w", err)
+		return nil, fmt.Errorf("error converting XML to map: %w; raw response: %s", err, res.Body)
 	}
 
-	// Check for SOAP Fault (e.g. record_already_exists, auth errors, flood errors)
-	if fault, ok := mv["Fault"].(map[string]interface{}); ok {
-		faultStr, _ := fault["faultstring"].(string)
+	// Check for a SOAP Fault (e.g. record_already_exists, auth errors, flood
+	// errors) anywhere in the response, regardless of namespace prefix.
+	if faultStr, ok := findFaultString(mv); ok {
 		return nil, fmt.Errorf("KAS API error: %s", faultStr)
 	}
 
 	// Parse response to check for success and get record ID
 	root, ok := mv["KasApiResponse"].(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("invalid response format")
+		return nil, fmt.Errorf("invalid response format: missing KasApiResponse element; raw response: %s", res.Body)
 	}
 
 	ret, ok := root["return"].(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("invalid response format: missing return")
+		return nil, fmt.Errorf("invalid response format: missing return element; raw response: %s", res.Body)
 	}
 
 	// Check for errors in response
@@ -416,6 +488,8 @@ func (p *Provider) SetRecord(ctx context.Context, zone string, record libdns.Rec
 		return nil, fmt.Errorf("error encoding JSON: %w", err)
 	}
 
+	kasCallMu.Lock()
+	defer kasCallMu.Unlock()
 	p.waitForFloodDelay()
 
 	// Call the SOAP method with JSON-encoded params
@@ -431,21 +505,21 @@ func (p *Provider) SetRecord(ctx context.Context, zone string, record libdns.Rec
 	}
 	mv, err := mxj.NewMapXml([]byte(res.Body))
 	if err != nil {
-		return nil, fmt.Errorf("error converting XML to map: %w", err)
+		return nil, fmt.Errorf("error converting XML to map: %w; raw response: %s", err, res.Body)
 	}
-	// Check for SOAP Fault
-	if fault, ok := mv["Fault"].(map[string]interface{}); ok {
-		faultStr, _ := fault["faultstring"].(string)
+	// Check for a SOAP Fault anywhere in the response, regardless of
+	// namespace prefix.
+	if faultStr, ok := findFaultString(mv); ok {
 		return nil, fmt.Errorf("KAS API error: %s", faultStr)
 	}
 	// Parse response to check for success
 	root, ok := mv["KasApiResponse"].(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("invalid response format")
+		return nil, fmt.Errorf("invalid response format: missing KasApiResponse element; raw response: %s", res.Body)
 	}
 	ret, ok := root["return"].(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("invalid response format: missing return")
+		return nil, fmt.Errorf("invalid response format: missing return element; raw response: %s", res.Body)
 	}
 
 	// Check for errors in response
@@ -525,6 +599,8 @@ func (p *Provider) DeleteRecord(ctx context.Context, zone string, record libdns.
 		return nil, fmt.Errorf("error encoding JSON: %w", err)
 	}
 
+	kasCallMu.Lock()
+	defer kasCallMu.Unlock()
 	p.waitForFloodDelay()
 
 	// Call the SOAP method with JSON-encoded params
@@ -540,21 +616,21 @@ func (p *Provider) DeleteRecord(ctx context.Context, zone string, record libdns.
 	}
 	mv, err := mxj.NewMapXml([]byte(res.Body))
 	if err != nil {
-		return nil, fmt.Errorf("error converting XML to map: %w", err)
+		return nil, fmt.Errorf("error converting XML to map: %w; raw response: %s", err, res.Body)
 	}
-	// Check for SOAP Fault
-	if fault, ok := mv["Fault"].(map[string]interface{}); ok {
-		faultStr, _ := fault["faultstring"].(string)
+	// Check for a SOAP Fault anywhere in the response, regardless of
+	// namespace prefix.
+	if faultStr, ok := findFaultString(mv); ok {
 		return nil, fmt.Errorf("KAS API error: %s", faultStr)
 	}
 	// Parse response to check for success
 	root, ok := mv["KasApiResponse"].(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("invalid response format")
+		return nil, fmt.Errorf("invalid response format: missing KasApiResponse element; raw response: %s", res.Body)
 	}
 	ret, ok := root["return"].(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("invalid response format: missing return")
+		return nil, fmt.Errorf("invalid response format: missing return element; raw response: %s", res.Body)
 	}
 	// Check for errors in response
 	items := ret["item"]
