@@ -182,7 +182,7 @@ func TestDeleteRecord(t *testing.T) {
 	record := libdns.RR{
 		Type: "A",
 		Name: "test",
-		Data: "123.123.123.123",
+		Data: "124.124.124.124",
 		TTL:  3600, // 1 hour
 	}
 
