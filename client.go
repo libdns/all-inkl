@@ -323,10 +323,20 @@ func (p *Provider) AppendRecord(ctx context.Context, zone string, record libdns.
 	return []libdns.Record{record}, nil
 }
 
+// getRecordByName looks up a cached record by name and type. This is used by
+// SetRecord, where the value of the record is the thing being changed and so
+// cannot be used as part of the lookup key.
+//
+// Note that if a zone legitimately contains multiple records with the same
+// name and type (e.g. several TXT records used for ACME challenges), this
+// lookup is inherently ambiguous and may return any one of them. Callers
+// that need to uniquely identify a specific record (e.g. to delete it)
+// should use getRecordByNameTypeValue instead.
 func (p *Provider) getRecordByName(ctx context.Context, zone string, record libdns.Record, recursive bool) (allinklRecord, error) {
+	rr := record.RR()
 
 	for _, crecord := range ChachedRecords[zone] {
-		if crecord.Name == record.RR().Name {
+		if crecord.Name == rr.Name && crecord.Type == rr.Type {
 			return crecord, nil
 		}
 	}
@@ -336,7 +346,30 @@ func (p *Provider) getRecordByName(ctx context.Context, zone string, record libd
 		return p.getRecordByName(ctx, zone, record, true)
 	}
 
-	return allinklRecord{}, fmt.Errorf("record not found: %s", record.RR().Name)
+	return allinklRecord{}, fmt.Errorf("record not found: name=%s type=%s", rr.Name, rr.Type)
+}
+
+// getRecordByNameTypeValue looks up a cached record by name, type, AND value.
+// Matching on all three fields is required to uniquely identify a record
+// when multiple records share the same name and type — for example, two TXT
+// records created for parallel ACME "_acme-challenge" validations. Matching
+// on name alone (as before) could pick the wrong record and delete/target
+// the one that is still needed, breaking ACME validation.
+func (p *Provider) getRecordByNameTypeValue(ctx context.Context, zone string, record libdns.Record, recursive bool) (allinklRecord, error) {
+	rr := record.RR()
+
+	for _, crecord := range ChachedRecords[zone] {
+		if crecord.Name == rr.Name && crecord.Type == rr.Type && crecord.Value == rr.Data {
+			return crecord, nil
+		}
+	}
+
+	if !recursive {
+		p.GetAllRecords(ctx, zone)
+		return p.getRecordByNameTypeValue(ctx, zone, record, true)
+	}
+
+	return allinklRecord{}, fmt.Errorf("record not found: name=%s type=%s data=%s", rr.Name, rr.Type, rr.Data)
 }
 
 // SetRecord updates a single DNS record in the specified zone.
@@ -434,7 +467,18 @@ func (p *Provider) SetRecord(ctx context.Context, zone string, record libdns.Rec
 		}
 	}
 
-	// If we reach here, the record was successfully updated
+	// If we reach here, the record was successfully updated.
+	// Update the cache so subsequent lookups (e.g. a follow-up Delete) see
+	// the new value rather than the stale one.
+	for i, crecord := range ChachedRecords[zone] {
+		if crecord.ID == searchedRecord.ID {
+			ChachedRecords[zone][i].Type = rr.Type
+			ChachedRecords[zone][i].Value = rr.Data
+			ChachedRecords[zone][i].TTL = ttlInSeconds
+			break
+		}
+	}
+
 	updatedRecord := libdns.RR{
 		Type: record.RR().Type,
 		Name: record.RR().Name,
@@ -447,9 +491,13 @@ func (p *Provider) SetRecord(ctx context.Context, zone string, record libdns.Rec
 
 // DeleteRecord removes a single DNS record from the specified zone.
 func (p *Provider) DeleteRecord(ctx context.Context, zone string, record libdns.Record) ([]libdns.Record, error) {
-	searchedRecord, err := p.getRecordByName(ctx, zone, record, false)
+	// Match on name, type, AND value so that when multiple records share the
+	// same name (e.g. two TXT records for parallel ACME challenges), the
+	// correct one is deleted instead of an arbitrary match.
+	searchedRecord, err := p.getRecordByNameTypeValue(ctx, zone, record, false)
 	if err != nil {
-		return nil, fmt.Errorf("record not found: %s", record.RR().Name)
+		rr := record.RR()
+		return nil, fmt.Errorf("record not found: name=%s type=%s data=%s", rr.Name, rr.Type, rr.Data)
 	}
 
 	httpClient := &http.Client{
